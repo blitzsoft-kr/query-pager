@@ -23,23 +23,27 @@ class KeysetPaginator:
         self.order_fields = order_fields
         self.field_names = [field for field, _ in order_fields]
 
-    def decode_cursor_values(self, cursor: Optional[str]) -> Optional[dict]:
+    def decode_cursor_values(
+        self, cursor: Optional[str]
+    ) -> Tuple[Optional[dict], str]:
         """
-        Decode cursor string to values dictionary and validate ordering.
+        Decode cursor string to values dictionary, direction, and validate ordering.
 
         Args:
             cursor: Cursor string to decode
 
         Returns:
-            Dictionary of field values, or None if cursor is None
+            Tuple of (cursor_values, direction) where:
+            - cursor_values: Dictionary of field values, or None if cursor is None
+            - direction: Cursor direction ("next" or "prev"), defaults to "next"
 
         Raises:
             CursorError: If cursor is invalid or ordering doesn't match
         """
         if not cursor:
-            return None
+            return None, "next"
 
-        cursor_order_fields, cursor_values = decode_cursor(cursor)
+        cursor_order_fields, cursor_values, direction = decode_cursor(cursor)
 
         # Validate ordering matches current query
         validate_cursor_ordering(cursor_order_fields, self.order_fields)
@@ -47,49 +51,64 @@ class KeysetPaginator:
         # Validate field names (for extra safety)
         validate_cursor_fields(cursor_values, self.field_names)
 
-        return cursor_values
+        return cursor_values, direction
 
-    def encode_cursor_values(self, item: Any) -> str:
+    def encode_cursor_values(self, item: Any, direction: str = "next") -> str:
         """
         Encode item's ordering field values to cursor string with ordering metadata.
 
         Args:
             item: ORM object to extract values from
+            direction: Cursor direction ("next" or "prev")
 
         Returns:
-            Base64-encoded cursor string with ordering and values
+            Base64-encoded cursor string with ordering, values, and direction
         """
         values = {}
         for field_name in self.field_names:
             values[field_name] = getattr(item, field_name)
 
-        return encode_cursor(self.order_fields, values)
+        return encode_cursor(self.order_fields, values, direction)
 
     def build_cursor_filter_conditions(
-        self, cursor_values: dict
+        self, cursor_values: dict, is_prev: bool = False
     ) -> List[Tuple[str, str, Any]]:
         """
         Build filter conditions for cursor-based pagination.
-        
+
         Creates conditions like (field1, field2) > (value1, value2)
         implemented as OR conditions.
+
+        Args:
+            cursor_values: Dictionary of field values from cursor
+            is_prev: If True, reverse the comparison operators for backward navigation
         """
         if len(self.order_fields) == 1:
             field_name, direction = self.order_fields[0]
-            op = ">" if direction == "asc" else "<"
+            # For "next": asc -> ">", desc -> "<"
+            # For "prev": asc -> "<", desc -> ">" (reversed)
+            if is_prev:
+                op = "<" if direction == "asc" else ">"
+            else:
+                op = ">" if direction == "asc" else "<"
             value = cursor_values[field_name]
             return [[(field_name, op, value)]]
 
-        return self._build_multi_field_conditions(cursor_values)
+        return self._build_multi_field_conditions(cursor_values, is_prev)
 
     def _build_multi_field_conditions(
-        self, cursor_values: dict
+        self, cursor_values: dict, is_prev: bool = False
     ) -> List[Tuple[str, str, Any]]:
         """Build conditions for multi-field ordering."""
         conditions = []
 
         for i, (field_name, direction) in enumerate(self.order_fields):
-            op = ">" if direction == "asc" else "<"
+            # For "next": asc -> ">", desc -> "<"
+            # For "prev": asc -> "<", desc -> ">" (reversed)
+            if is_prev:
+                op = "<" if direction == "asc" else ">"
+            else:
+                op = ">" if direction == "asc" else "<"
             eq_op = "="
             condition = []
 
@@ -111,31 +130,31 @@ class KeysetPaginator:
         total_size: int,
         requested_size: int,
         has_previous: bool,
+        has_next: bool,
     ) -> Paginated:
         """
         Create Paginated response with cursors.
 
         Args:
-            items: List of ORM objects
+            items: List of ORM objects (already trimmed to requested_size)
             total_size: Total number of items in dataset
             requested_size: Requested page size
             has_previous: Whether there's a previous page
+            has_next: Whether there's a next page
 
         Returns:
             Paginated response with prev/next cursors
         """
-        has_next = len(items) > requested_size
-
-        if has_next:
-            items = items[:requested_size]
         prev_cursor = None
         next_cursor = None
 
         if items:
             if has_previous:
-                prev_cursor = self.encode_cursor_values(items[0])
+                # prev cursor points to first item, direction="prev" for backward nav
+                prev_cursor = self.encode_cursor_values(items[0], direction="prev")
             if has_next:
-                next_cursor = self.encode_cursor_values(items[-1])
+                # next cursor points to last item, direction="next" for forward nav
+                next_cursor = self.encode_cursor_values(items[-1], direction="next")
 
         return Paginated(
             total_size=total_size,

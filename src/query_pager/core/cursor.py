@@ -7,48 +7,56 @@ from typing import Any, Dict, List, Tuple
 from query_pager.core.exceptions import CursorError
 
 
-def encode_cursor(order_fields: List[Tuple[str, str]], values: Dict[str, Any]) -> str:
+def encode_cursor(
+    order_fields: List[Tuple[str, str]],
+    values: Dict[str, Any],
+    direction: str = "next",
+) -> str:
     """
-    Encode cursor with ordering metadata and values to base64 string.
+    Encode cursor with ordering metadata, values, and direction to base64 string.
 
     Args:
         order_fields: List of (field_name, direction) tuples, e.g., [("name", "asc"), ("id", "desc")]
         values: Dictionary of field values, e.g., {"name": "Banana", "id": 2}
+        direction: Cursor direction, either "next" or "prev"
 
     Returns:
         Base64-encoded cursor string
 
     Raises:
-        CursorError: If order_fields or values are empty
+        CursorError: If order_fields or values are empty, or direction is invalid
     """
     if not order_fields:
         raise CursorError("Cursor order_fields cannot be empty")
     if not values:
         raise CursorError("Cursor values cannot be empty")
+    if direction not in ("next", "prev"):
+        raise CursorError(f"Invalid cursor direction: {direction}")
 
     # Convert order_fields to compact format: ["+name", "-id"]
     ordering = []
-    for field, direction in order_fields:
-        prefix = "+" if direction == "asc" else "-"
+    for field, dir_ in order_fields:
+        prefix = "+" if dir_ == "asc" else "-"
         ordering.append(f"{prefix}{field}")
 
-    cursor_data = {"o": ordering, "v": values}
+    cursor_data = {"o": ordering, "v": values, "d": direction}
     json_str = json.dumps(cursor_data, separators=(",", ":"), default=str)
     encoded = base64.urlsafe_b64encode(json_str.encode("utf-8"))
     return encoded.decode("utf-8")
 
 
-def decode_cursor(cursor: str) -> Tuple[List[Tuple[str, str]], Dict[str, Any]]:
+def decode_cursor(cursor: str) -> Tuple[List[Tuple[str, str]], Dict[str, Any], str]:
     """
-    Decode base64 cursor string to ordering and values.
+    Decode base64 cursor string to ordering, values, and direction.
 
     Args:
         cursor: Base64-encoded cursor string
 
     Returns:
-        Tuple of (order_fields, values) where:
+        Tuple of (order_fields, values, direction) where:
         - order_fields: List of (field_name, direction) tuples
         - values: Dictionary of field values
+        - direction: Cursor direction ("next" or "prev")
 
     Raises:
         CursorError: If cursor is invalid or malformed
@@ -69,9 +77,14 @@ def decode_cursor(cursor: str) -> Tuple[List[Tuple[str, str]], Dict[str, Any]]:
 
         ordering = cursor_data["o"]
         values = cursor_data["v"]
+        # Default to "next" for backward compatibility with old cursors
+        direction = cursor_data.get("d", "next")
 
         if not isinstance(ordering, list) or not isinstance(values, dict):
             raise CursorError("Invalid cursor format: 'o' must be list, 'v' must be dict")
+
+        if direction not in ("next", "prev"):
+            raise CursorError(f"Invalid cursor direction: {direction}")
 
         # Parse ordering: ["+name", "-id"] -> [("name", "asc"), ("id", "desc")]
         order_fields = []
@@ -83,15 +96,15 @@ def decode_cursor(cursor: str) -> Tuple[List[Tuple[str, str]], Dict[str, Any]]:
             field_name = field_str[1:]
 
             if direction_char == "+":
-                direction = "asc"
+                dir_ = "asc"
             elif direction_char == "-":
-                direction = "desc"
+                dir_ = "desc"
             else:
                 raise CursorError(f"Invalid direction in ordering: {field_str}")
 
-            order_fields.append((field_name, direction))
+            order_fields.append((field_name, dir_))
 
-        return order_fields, values
+        return order_fields, values, direction
 
     except CursorError:
         raise

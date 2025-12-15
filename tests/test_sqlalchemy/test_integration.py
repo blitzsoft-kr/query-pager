@@ -147,3 +147,50 @@ def test_empty_result_pagination(sync_session):
     assert len(result.items) == 0
     assert result.prev is None
     assert result.next is None
+
+
+def test_backward_navigation(sync_session):
+    """Test backward navigation with prev cursor."""
+    query = select(Product).order_by(Product.id)
+
+    # Get first page - no prev cursor
+    page1 = paginate(sync_session, query, PageOptions(size=2))
+    assert page1.prev is None
+    assert page1.items[0].id == 1
+    assert page1.items[1].id == 2
+
+    # Get second page - has prev cursor
+    page2 = paginate(sync_session, query, PageOptions(cursor=page1.next, size=2))
+    assert page2.prev is not None
+    assert page2.items[0].id == 3
+    assert page2.items[1].id == 4
+
+    # Use prev cursor to go back to first page
+    page1_again = paginate(sync_session, query, PageOptions(cursor=page2.prev, size=2))
+    assert len(page1_again.items) == 2
+    assert page1_again.items[0].id == 1
+    assert page1_again.items[1].id == 2
+
+
+@pytest.mark.asyncio
+async def test_backward_navigation_async(async_session):
+    """Test backward navigation with prev cursor (async)."""
+    query = select(Product).order_by(Product.id)
+
+    # Get first page
+    page1 = await paginate_async(async_session, query, PageOptions(size=2))
+    assert page1.prev is None
+    assert page1.items[0].id == 1
+    assert page1.items[1].id == 2
+
+    # Get second page
+    page2 = await paginate_async(async_session, query, PageOptions(cursor=page1.next, size=2))
+    assert page2.prev is not None
+    assert page2.items[0].id == 3
+    assert page2.items[1].id == 4
+
+    # Use prev cursor to go back to first page
+    page1_again = await paginate_async(async_session, query, PageOptions(cursor=page2.prev, size=2))
+    assert len(page1_again.items) == 2
+    assert page1_again.items[0].id == 1
+    assert page1_again.items[1].id == 2

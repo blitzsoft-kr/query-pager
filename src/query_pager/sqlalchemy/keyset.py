@@ -45,7 +45,9 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
 
         return order_fields
 
-    def apply_cursor_filter(self, query: Select, cursor_values: dict) -> Select:
+    def apply_cursor_filter(
+        self, query: Select, cursor_values: dict, is_prev: bool = False
+    ) -> Select:
         """
         Apply cursor-based filter to SQLAlchemy query.
 
@@ -56,11 +58,12 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
         Args:
             query: SQLAlchemy Select statement
             cursor_values: Dictionary of field values from cursor
+            is_prev: If True, reverse comparison operators for backward navigation
 
         Returns:
             Modified query with cursor filter applied
         """
-        conditions_groups = self.build_cursor_filter_conditions(cursor_values)
+        conditions_groups = self.build_cursor_filter_conditions(cursor_values, is_prev)
         model = self._extract_model_from_query(query)
 
         or_conditions = []
@@ -86,6 +89,39 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
         if or_conditions:
             query = query.where(or_(*or_conditions))
 
+        return query
+
+    def reverse_ordering(self, query: Select) -> Select:
+        """
+        Reverse the ordering of a SQLAlchemy query.
+
+        Args:
+            query: SQLAlchemy Select statement with ORDER BY
+
+        Returns:
+            Query with reversed ordering
+        """
+        from sqlalchemy.sql.elements import UnaryExpression
+
+        model = self._extract_model_from_query(query)
+        reversed_order = []
+
+        for clause in query._order_by_clauses:
+            if isinstance(clause, UnaryExpression):
+                field_name = clause.element.key
+                is_desc = clause.modifier.__name__ == "desc_op"
+            else:
+                field_name = clause.key
+                is_desc = False
+
+            column = getattr(model, field_name)
+            if is_desc:
+                reversed_order.append(column.asc())
+            else:
+                reversed_order.append(column.desc())
+
+        # Remove existing order and apply reversed
+        query = query.order_by(None).order_by(*reversed_order)
         return query
 
     def _extract_model_from_query(self, query: Select) -> Any:
@@ -135,10 +171,20 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
         self.order_fields = self.extract_order_fields_from_query(query)
         self.field_names = [field for field, _ in self.order_fields]
 
-        cursor_values = self.decode_cursor_values(options.cursor)
+        cursor_values, direction = self.decode_cursor_values(options.cursor)
+        is_prev = direction == "prev"
+
+        # Get total count from base query
+        base_query = query
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_size = db.execute(count_query).scalar_one()
 
         if cursor_values:
-            query = self.apply_cursor_filter(query, cursor_values)
+            query = self.apply_cursor_filter(query, cursor_values, is_prev)
+
+        # For backward navigation, reverse the ordering
+        if is_prev:
+            query = self.reverse_ordering(query)
 
         fetch_size = options.size + 1
         items_query = query.limit(fetch_size)
@@ -146,14 +192,29 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
         result = db.execute(items_query)
         items = [row[0] for row in result.fetchall()]
 
-        count_query = select(func.count()).select_from(query.subquery())
-        total_size = db.execute(count_query).scalar_one()
-        has_previous = cursor_values is not None
+        # Check if there are more items
+        has_more = len(items) > options.size
+        if has_more:
+            items = items[:options.size]
+
+        # For backward navigation, reverse items back to original order
+        if is_prev:
+            items = list(reversed(items))
+
+        # Determine has_previous and has_next based on direction
+        if is_prev:
+            has_previous = has_more
+            has_next = True
+        else:
+            has_previous = cursor_values is not None
+            has_next = has_more
+
         return self.create_paginated_response(
             items=items,
             total_size=total_size,
             requested_size=options.size,
             has_previous=has_previous,
+            has_next=has_next,
         )
 
     async def paginate_async(
@@ -179,10 +240,21 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
         self.order_fields = self.extract_order_fields_from_query(query)
         self.field_names = [field for field, _ in self.order_fields]
 
-        cursor_values = self.decode_cursor_values(options.cursor)
+        cursor_values, direction = self.decode_cursor_values(options.cursor)
+        is_prev = direction == "prev"
+
+        # Get total count from base query
+        base_query = query
+        count_query = select(func.count()).select_from(base_query.subquery())
+        total_result = await db.execute(count_query)
+        total_size = total_result.scalar_one()
 
         if cursor_values:
-            query = self.apply_cursor_filter(query, cursor_values)
+            query = self.apply_cursor_filter(query, cursor_values, is_prev)
+
+        # For backward navigation, reverse the ordering
+        if is_prev:
+            query = self.reverse_ordering(query)
 
         fetch_size = options.size + 1
         items_query = query.limit(fetch_size)
@@ -190,13 +262,27 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
         result = await db.execute(items_query)
         items = [row[0] for row in result.fetchall()]
 
-        count_query = select(func.count()).select_from(query.subquery())
-        total_result = await db.execute(count_query)
-        total_size = total_result.scalar_one()
-        has_previous = cursor_values is not None
+        # Check if there are more items
+        has_more = len(items) > options.size
+        if has_more:
+            items = items[:options.size]
+
+        # For backward navigation, reverse items back to original order
+        if is_prev:
+            items = list(reversed(items))
+
+        # Determine has_previous and has_next based on direction
+        if is_prev:
+            has_previous = has_more
+            has_next = True
+        else:
+            has_previous = cursor_values is not None
+            has_next = has_more
+
         return self.create_paginated_response(
             items=items,
             total_size=total_size,
             requested_size=options.size,
             has_previous=has_previous,
+            has_next=has_next,
         )

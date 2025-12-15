@@ -20,10 +20,11 @@ def test_init_empty_order_fields_raises():
 
 
 def test_decode_cursor_values_none():
-    """Test decoding None cursor returns None."""
+    """Test decoding None cursor returns (None, 'next')."""
     paginator = KeysetPaginator([("id", "asc")])
-    result = paginator.decode_cursor_values(None)
-    assert result is None
+    values, direction = paginator.decode_cursor_values(None)
+    assert values is None
+    assert direction == "next"
 
 
 def test_decode_cursor_values_valid():
@@ -32,8 +33,20 @@ def test_decode_cursor_values_valid():
 
     paginator = KeysetPaginator([("id", "asc")])
     cursor = encode_cursor([("id", "asc")], {"id": 10})
-    result = paginator.decode_cursor_values(cursor)
-    assert result == {"id": 10}
+    values, direction = paginator.decode_cursor_values(cursor)
+    assert values == {"id": 10}
+    assert direction == "next"
+
+
+def test_decode_cursor_values_with_prev_direction():
+    """Test decoding cursor with prev direction."""
+    from query_pager.core.cursor import encode_cursor
+
+    paginator = KeysetPaginator([("id", "asc")])
+    cursor = encode_cursor([("id", "asc")], {"id": 10}, direction="prev")
+    values, direction = paginator.decode_cursor_values(cursor)
+    assert values == {"id": 10}
+    assert direction == "prev"
 
 
 def test_decode_cursor_values_field_mismatch():
@@ -141,9 +154,28 @@ def test_encode_cursor_values():
     # Decode to verify
     from query_pager.core.cursor import decode_cursor
 
-    decoded_order, decoded_values = decode_cursor(cursor)
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
     assert decoded_order == [("id", "asc"), ("name", "asc")]
     assert decoded_values == {"id": 10, "name": "test"}
+    assert direction == "next"
+
+
+def test_encode_cursor_values_with_direction():
+    """Test encoding cursor values with prev direction."""
+
+    class MockItem:
+        id = 10
+        name = "test"
+
+    paginator = KeysetPaginator([("id", "asc"), ("name", "asc")])
+    cursor = paginator.encode_cursor_values(MockItem(), direction="prev")
+
+    from query_pager.core.cursor import decode_cursor
+
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
+    assert decoded_order == [("id", "asc"), ("name", "asc")]
+    assert decoded_values == {"id": 10, "name": "test"}
+    assert direction == "prev"
 
 
 def test_create_paginated_response_no_items():
@@ -153,9 +185,10 @@ def test_create_paginated_response_no_items():
         items=[],
         total_size=0,
         requested_size=10,
-        has_previous=False
+        has_previous=False,
+        has_next=False,
     )
-    
+
     assert result.total_size == 0
     assert len(result.items) == 0
     assert result.prev is None
@@ -167,18 +200,19 @@ def test_create_paginated_response_with_next():
     class MockItem:
         def __init__(self, id):
             self.id = id
-    
+
     paginator = KeysetPaginator([("id", "asc")])
-    items = [MockItem(1), MockItem(2), MockItem(3)]
-    
+    items = [MockItem(1), MockItem(2)]
+
     result = paginator.create_paginated_response(
         items=items,
         total_size=10,
         requested_size=2,
-        has_previous=False
+        has_previous=False,
+        has_next=True,
     )
-    
-    assert len(result.items) == 2  # Trimmed to requested size
+
+    assert len(result.items) == 2
     assert result.next is not None  # Has more items
     assert result.prev is None  # First page
 
@@ -188,17 +222,40 @@ def test_create_paginated_response_with_prev():
     class MockItem:
         def __init__(self, id):
             self.id = id
-    
+
     paginator = KeysetPaginator([("id", "asc")])
     items = [MockItem(3), MockItem(4)]
-    
+
     result = paginator.create_paginated_response(
         items=items,
         total_size=10,
         requested_size=2,
-        has_previous=True
+        has_previous=True,
+        has_next=False,
     )
-    
+
     assert len(result.items) == 2
     assert result.prev is not None  # Has previous page
     assert result.next is None  # Last page
+
+
+def test_create_paginated_response_with_both():
+    """Test creating response with both prev and next cursors."""
+    class MockItem:
+        def __init__(self, id):
+            self.id = id
+
+    paginator = KeysetPaginator([("id", "asc")])
+    items = [MockItem(3), MockItem(4)]
+
+    result = paginator.create_paginated_response(
+        items=items,
+        total_size=10,
+        requested_size=2,
+        has_previous=True,
+        has_next=True,
+    )
+
+    assert len(result.items) == 2
+    assert result.prev is not None  # Has previous page
+    assert result.next is not None  # Has next page

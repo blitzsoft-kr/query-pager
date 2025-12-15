@@ -5,7 +5,11 @@ import sys
 import django
 from pathlib import Path
 
-# Add tests directory to path
+# Add project root to path for 'tests.django_app' imports
+project_root = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(project_root))
+
+# Add tests directory to path for 'django_settings' import
 tests_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(tests_dir))
 

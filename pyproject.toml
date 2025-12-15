@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "query-pager"
-version = "1.0.0"
+version = "1.0.1"
 description = "Cursor-based pagination and CEL filtering for Django and SQLAlchemy"
 authors = ["Wonguk Jung <eric.jung@blitzsoft.co.kr>"]
 license = "MIT"

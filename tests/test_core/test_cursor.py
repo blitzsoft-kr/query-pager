@@ -47,9 +47,10 @@ def test_decode_cursor_simple():
     order_fields = [("id", "asc")]
     values = {"id": 10}
     cursor = encode_cursor(order_fields, values)
-    decoded_order, decoded_values = decode_cursor(cursor)
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
     assert decoded_order == order_fields
     assert decoded_values == values
+    assert direction == "next"
 
 
 def test_decode_cursor_multiple_fields():
@@ -57,9 +58,10 @@ def test_decode_cursor_multiple_fields():
     order_fields = [("name", "asc"), ("id", "desc")]
     values = {"id": 10, "name": "test", "created_at": "2024-01-01"}
     cursor = encode_cursor(order_fields, values)
-    decoded_order, decoded_values = decode_cursor(cursor)
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
     assert decoded_order == order_fields
     assert decoded_values == values
+    assert direction == "next"
 
 
 def test_decode_cursor_desc_ordering():
@@ -67,9 +69,21 @@ def test_decode_cursor_desc_ordering():
     order_fields = [("price", "desc"), ("id", "asc")]
     values = {"price": 100, "id": 5}
     cursor = encode_cursor(order_fields, values)
-    decoded_order, decoded_values = decode_cursor(cursor)
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
     assert decoded_order == order_fields
     assert decoded_values == values
+    assert direction == "next"
+
+
+def test_decode_cursor_with_prev_direction():
+    """Test decoding cursor with prev direction."""
+    order_fields = [("id", "asc")]
+    values = {"id": 10}
+    cursor = encode_cursor(order_fields, values, direction="prev")
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
+    assert decoded_order == order_fields
+    assert decoded_values == values
+    assert direction == "prev"
 
 
 def test_decode_cursor_empty_raises():
@@ -190,9 +204,21 @@ def test_roundtrip_encoding():
     order_fields = [("name", "desc"), ("id", "asc")]
     values = {"id": 42, "name": "product", "price": 99.99}
     cursor = encode_cursor(order_fields, values)
-    decoded_order, decoded_values = decode_cursor(cursor)
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
     assert decoded_order == order_fields
     assert decoded_values == values
+    assert direction == "next"
+
+
+def test_roundtrip_encoding_with_direction():
+    """Test encoding and decoding roundtrip with direction."""
+    order_fields = [("name", "desc"), ("id", "asc")]
+    values = {"id": 42, "name": "product"}
+    cursor = encode_cursor(order_fields, values, direction="prev")
+    decoded_order, decoded_values, direction = decode_cursor(cursor)
+    assert decoded_order == order_fields
+    assert decoded_values == values
+    assert direction == "prev"
 
 
 def test_cursor_format_compact():
@@ -208,5 +234,7 @@ def test_cursor_format_compact():
     decoded_json = json.loads(base64.urlsafe_b64decode(cursor))
     assert "o" in decoded_json
     assert "v" in decoded_json
+    assert "d" in decoded_json
     assert decoded_json["o"] == ["+name", "-id"]
     assert decoded_json["v"] == {"name": "Banana", "id": 2}
+    assert decoded_json["d"] == "next"
