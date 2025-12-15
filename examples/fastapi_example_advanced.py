@@ -79,7 +79,7 @@ class QueryBuilder:
             )
 
         query = apply_ordering(
-            query, order_by or self.default_order, self.orderable_fields
+            query, order_by=order_by or self.default_order, fields=self.orderable_fields
         )
 
         return await paginate_async(db, query, PageOptions(cursor=cursor, size=size))

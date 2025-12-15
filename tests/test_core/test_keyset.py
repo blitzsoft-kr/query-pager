@@ -29,9 +29,9 @@ def test_decode_cursor_values_none():
 def test_decode_cursor_values_valid():
     """Test decoding valid cursor."""
     from query_pager.core.cursor import encode_cursor
-    
+
     paginator = KeysetPaginator([("id", "asc")])
-    cursor = encode_cursor({"id": 10})
+    cursor = encode_cursor([("id", "asc")], {"id": 10})
     result = paginator.decode_cursor_values(cursor)
     assert result == {"id": 10}
 
@@ -39,11 +39,39 @@ def test_decode_cursor_values_valid():
 def test_decode_cursor_values_field_mismatch():
     """Test decoding cursor with mismatched fields raises error."""
     from query_pager.core.cursor import encode_cursor
-    
+
     paginator = KeysetPaginator([("id", "asc"), ("name", "asc")])
-    cursor = encode_cursor({"id": 10})  # Missing 'name'
-    
+    cursor = encode_cursor([("id", "asc"), ("name", "asc")], {"id": 10})  # Missing 'name' value
+
     with pytest.raises(CursorError, match="missing fields"):
+        paginator.decode_cursor_values(cursor)
+
+
+def test_decode_cursor_values_ordering_mismatch():
+    """Test decoding cursor with mismatched ordering raises error."""
+    from query_pager.core.cursor import encode_cursor
+
+    # Cursor was created with id ASC
+    cursor = encode_cursor([("id", "asc")], {"id": 10})
+
+    # But paginator expects id DESC
+    paginator = KeysetPaginator([("id", "desc")])
+
+    with pytest.raises(CursorError, match="ordering mismatch"):
+        paginator.decode_cursor_values(cursor)
+
+
+def test_decode_cursor_values_field_order_mismatch():
+    """Test decoding cursor with different field order raises error."""
+    from query_pager.core.cursor import encode_cursor
+
+    # Cursor was created with (name, id) ordering
+    cursor = encode_cursor([("name", "asc"), ("id", "asc")], {"name": "test", "id": 10})
+
+    # But paginator expects (id, name) ordering
+    paginator = KeysetPaginator([("id", "asc"), ("name", "asc")])
+
+    with pytest.raises(CursorError, match="ordering mismatch"):
         paginator.decode_cursor_values(cursor)
 
 
@@ -100,19 +128,22 @@ def test_build_cursor_filter_three_fields():
 
 def test_encode_cursor_values():
     """Test encoding cursor values from item."""
+
     class MockItem:
         id = 10
         name = "test"
-    
+
     paginator = KeysetPaginator([("id", "asc"), ("name", "asc")])
     cursor = paginator.encode_cursor_values(MockItem())
-    
+
     assert isinstance(cursor, str)
-    
+
     # Decode to verify
     from query_pager.core.cursor import decode_cursor
-    decoded = decode_cursor(cursor)
-    assert decoded == {"id": 10, "name": "test"}
+
+    decoded_order, decoded_values = decode_cursor(cursor)
+    assert decoded_order == [("id", "asc"), ("name", "asc")]
+    assert decoded_values == {"id": 10, "name": "test"}
 
 
 def test_create_paginated_response_no_items():

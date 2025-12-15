@@ -2,7 +2,12 @@
 
 from typing import Any, List, Optional, Tuple
 
-from query_pager.core.cursor import decode_cursor, encode_cursor, validate_cursor_fields
+from query_pager.core.cursor import (
+    decode_cursor,
+    encode_cursor,
+    validate_cursor_fields,
+    validate_cursor_ordering,
+)
 from query_pager.core.exceptions import PaginationError
 from query_pager.core.schemas import PageOptions, Paginated
 
@@ -19,21 +24,46 @@ class KeysetPaginator:
         self.field_names = [field for field, _ in order_fields]
 
     def decode_cursor_values(self, cursor: Optional[str]) -> Optional[dict]:
-        """Decode cursor string to values dictionary."""
+        """
+        Decode cursor string to values dictionary and validate ordering.
+
+        Args:
+            cursor: Cursor string to decode
+
+        Returns:
+            Dictionary of field values, or None if cursor is None
+
+        Raises:
+            CursorError: If cursor is invalid or ordering doesn't match
+        """
         if not cursor:
             return None
 
-        cursor_values = decode_cursor(cursor)
+        cursor_order_fields, cursor_values = decode_cursor(cursor)
+
+        # Validate ordering matches current query
+        validate_cursor_ordering(cursor_order_fields, self.order_fields)
+
+        # Validate field names (for extra safety)
         validate_cursor_fields(cursor_values, self.field_names)
+
         return cursor_values
 
     def encode_cursor_values(self, item: Any) -> str:
-        """Encode item's ordering field values to cursor string."""
+        """
+        Encode item's ordering field values to cursor string with ordering metadata.
+
+        Args:
+            item: ORM object to extract values from
+
+        Returns:
+            Base64-encoded cursor string with ordering and values
+        """
         values = {}
         for field_name in self.field_names:
             values[field_name] = getattr(item, field_name)
 
-        return encode_cursor(values)
+        return encode_cursor(self.order_fields, values)
 
     def build_cursor_filter_conditions(
         self, cursor_values: dict

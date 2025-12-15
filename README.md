@@ -4,15 +4,19 @@
 
 [![Python](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/blitzsoft-kr/query-pager)
+[![Tests](https://img.shields.io/badge/tests-149%20passing-brightgreen.svg)](https://github.com/blitzsoft-kr/query-pager)
 
 ---
 
 ## 🎯 Features
 
-- ✅ **Cursor-based Pagination** - Efficient keyset pagination for large datasets
+- ✅ **Cursor-based Pagination** - Efficient keyset pagination for large datasets with ordering metadata
 - ✅ **CEL Filtering** - Dynamic filtering using Common Expression Language
 - ✅ **Dynamic Ordering** - Runtime-specified multi-field sorting
 - ✅ **Dual ORM Support** - Works with both SQLAlchemy (1.x & 2.x) and Django (4.0+)
+- ✅ **Ordering Validation** - Automatic validation prevents cursor reuse across different orderings
+- ✅ **Compact Cursor Format** - Space-efficient cursor encoding with ordering metadata
 
 ---
 
@@ -26,9 +30,6 @@ pip install query-pager[sqlalchemy]
 
 # With Django support
 pip install query-pager[django]
-
-# With both
-pip install query-pager[all]
 ```
 
 ---
@@ -91,6 +92,49 @@ result = paginate(queryset, PageOptions(size=20))
 
 ---
 
+## 🔐 Cursor Format & Security
+
+QueryPager uses a compact, secure cursor format that includes ordering metadata to prevent pagination errors:
+
+```python
+# Cursor structure (Base64-encoded JSON)
+{
+  "o": ["+name", "-id"],  # Ordering: name ASC, id DESC
+  "v": {                   # Values at cursor position
+    "name": "Product",
+    "id": 123
+  }
+}
+```
+
+### Key Features
+
+- **Ordering Validation**: Cursors include ordering metadata and are validated on decode
+- **Tamper Detection**: Changing query ordering with an existing cursor raises `CursorError`
+- **Compact Format**: Uses single-character keys (`o`, `v`) for minimal overhead
+- **Type Safety**: Supports various data types (strings, numbers, dates) via JSON serialization
+
+### Example
+
+```python
+from query_pager.core.cursor import decode_cursor
+
+# Cursor: eyJvIjpbIituYW1lIiwiLWlkIl0sInYiOnsibmFtZSI6IlByb2R1Y3QiLCJpZCI6MTIzfX0=
+order_fields, values = decode_cursor(cursor)
+# order_fields: [("name", "asc"), ("id", "desc")]
+# values: {"name": "Product", "id": 123}
+```
+
+### Security Considerations
+
+- ✅ Prevents cursor reuse across different query orderings
+- ✅ Validates field names match between cursor and query
+- ✅ Detects direction changes (ASC ↔ DESC)
+- ✅ Catches field order mismatches
+- ⚠️ Cursors are not encrypted - avoid sensitive data in ordering fields
+
+---
+
 ## 🏗️ Architecture
 
 ### Code Structure
@@ -119,11 +163,17 @@ QueryPager/
 │       ├── pagination.py        # Pagination wrapper
 │       └── keyset.py            # Django keyset
 │
-└── tests/                       # 113 tests (98% coverage)
-    ├── test_core/               # Core logic tests (55 tests)
-    ├── test_sqlalchemy/         # SQLAlchemy tests (53 tests)
-    ├── test_django_unit.py      # Django unit tests (9 tests)
-    └── test_django/             # Django integration tests (WIP - 15 tests, fixture issues)
+└── tests/                       # 149 tests (100% passing)
+    ├── test_core/               # Core logic tests (59 tests)
+    │   ├── test_cursor.py       # Cursor encoding/decoding (22 tests)
+    │   ├── test_keyset.py       # Keyset pagination (15 tests)
+    │   └── ...                  # CEL, ordering, schemas tests
+    ├── test_sqlalchemy/         # SQLAlchemy tests (70 tests)
+    │   ├── test_cursor_ordering.py  # Cursor validation (5 tests)
+    │   └── ...                  # Pagination, filtering, ordering tests
+    └── test_django/             # Django tests (20 tests)
+        ├── test_cursor_ordering.py  # Cursor validation (5 tests)
+        └── ...                  # Pagination, filtering, ordering tests
 ```
 
 ---

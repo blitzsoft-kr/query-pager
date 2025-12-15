@@ -97,12 +97,12 @@ def test_invalid_cursor_format(sync_session):
 def test_cursor_field_mismatch(sync_session):
     """Test cursor with mismatched fields."""
     from query_pager.core.cursor import encode_cursor
-    
-    # Create cursor with wrong fields
-    wrong_cursor = encode_cursor({"wrong_field": 10})
-    
+
+    # Create cursor with wrong fields (ordering matches but values don't)
+    wrong_cursor = encode_cursor([("id", "asc")], {"wrong_field": 10})
+
     query = select(Product).order_by(Product.id)
-    
+
     with pytest.raises(CursorError, match="missing fields"):
         paginate(sync_session, query, PageOptions(cursor=wrong_cursor, size=10))
 

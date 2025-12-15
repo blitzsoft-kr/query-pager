@@ -106,7 +106,7 @@ async def list_products(
         query = apply_cel_filter(query, expr=filter, fields=PRODUCT_FILTERABLE_FIELDS)
 
     # Apply ordering
-    query = apply_ordering(query, order_by or "id", PRODUCT_ORDERABLE_FIELDS)
+    query = apply_ordering(query, order_by=order_by or "id", fields=PRODUCT_ORDERABLE_FIELDS)
 
     # Paginate
     return await paginate_async(db, query, PageOptions(cursor=cursor, size=size))
@@ -142,7 +142,7 @@ async def list_electronics(
         "price": Product.price,
         "id": Product.id,
     }
-    query = apply_ordering(query, order_by, orderable_fields)
+    query = apply_ordering(query, order_by=order_by, fields=orderable_fields)
 
     # Paginate
     options = PageOptions(cursor=cursor, size=size)

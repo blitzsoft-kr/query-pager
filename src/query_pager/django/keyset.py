@@ -101,7 +101,7 @@ class DjangoKeysetPaginator(KeysetPaginator):
         fetch_size = options.size + 1
         items = list(queryset[:fetch_size])
 
-        total_size = queryset.model.objects.count()
+        total_size = queryset.count()
         has_previous = cursor_values is not None
         return self.create_paginated_response(
             items=items,
