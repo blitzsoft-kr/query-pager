@@ -131,6 +131,7 @@ class KeysetPaginator:
         requested_size: int,
         has_previous: bool,
         has_next: bool,
+        include_prev_cursor: bool = False,
     ) -> Paginated:
         """
         Create Paginated response with cursors.
@@ -141,6 +142,7 @@ class KeysetPaginator:
             requested_size: Requested page size
             has_previous: Whether there's a previous page
             has_next: Whether there's a next page
+            include_prev_cursor: If True, generate prev cursor even when has_previous is False (for incremental updates)
 
         Returns:
             Paginated response with prev/next cursors
@@ -149,7 +151,10 @@ class KeysetPaginator:
         next_cursor = None
 
         if items:
-            if has_previous:
+            # Generate prev cursor if:
+            # 1. has_previous is True (normal case), OR
+            # 2. include_prev_cursor is True (for incremental updates on first page)
+            if has_previous or include_prev_cursor:
                 # prev cursor points to first item, direction="prev" for backward nav
                 prev_cursor = self.encode_cursor_values(items[0], direction="prev")
             if has_next:

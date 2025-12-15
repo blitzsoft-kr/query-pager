@@ -33,9 +33,13 @@ class PageOptions(BaseModel):
     Attributes:
         cursor: Page cursor (bookmark) for the current position
         size: Number of items per page (1-100)
+        include_prev_cursor: If True, generate prev cursor even on first page (useful for incremental updates)
     """
 
     cursor: Optional[str] = Field(None, description="Page cursor")
     size: int = Field(20, ge=1, le=100, description="Page size")
+    include_prev_cursor: bool = Field(
+        False, description="Generate prev cursor on first page for incremental updates"
+    )
 
     model_config = {"frozen": True}

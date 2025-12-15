@@ -215,6 +215,7 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
             requested_size=options.size,
             has_previous=has_previous,
             has_next=has_next,
+            include_prev_cursor=options.include_prev_cursor,
         )
 
     async def paginate_async(
@@ -285,4 +286,5 @@ class SQLAlchemyKeysetPaginator(KeysetPaginator):
             requested_size=options.size,
             has_previous=has_previous,
             has_next=has_next,
+            include_prev_cursor=options.include_prev_cursor,
         )
